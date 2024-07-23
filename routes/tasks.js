@@ -12,7 +12,9 @@ const {
   getInvites,
   subscribeUser,
   finishedJuz,
-  cancelJuz
+  cancelJuz,
+  showGroupProfile,
+  showGroupSubs
 } = require("../controllers/operations");
 // Get Hatm route
 router.get("/hatm", getHatm);
@@ -35,8 +37,13 @@ router.post("/groups/invite/:id", inviteUser);
 router.get("/groups/getall", getInvites);
 // Subscribe a user
 router.post("/groups/subscribe", subscribeUser);
-//
-router.delete('/pora/user',cancelJuz);
-router.delete('user/pora',finishedJuz);
+// Cancelling juz
+router.delete('/cancelJuz/user/:userId/pora/:poraId',cancelJuz);
+// Finishing juz
+router.put('/finishedJuz/user/:userId/pora/:poraId',finishedJuz);
+// Show Group Profile
+router.get('/profile/groupId/:id',showGroupProfile);
+// Show Group Subs
+router.get('/subs/idGroup/:id',showGroupSubs);
 
 module.exports = router;

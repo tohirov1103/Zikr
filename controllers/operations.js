@@ -2,6 +2,7 @@ const { Hatm } = require("../models/index");
 const { getConnection } = require("../db/connectDb");
 const { response } = require("express");
 const poralar = require("../functions/pora");
+const { get } = require("../routes/tasks");
 // console.log(poralar);
 const getHatm = async (req, res) => {
   try {
@@ -46,7 +47,6 @@ const chooseHatm = async (req, res) => {
             res.json(user);
             // res.json(user);
           });
-          
         }
       );
     });
@@ -65,21 +65,40 @@ const createGroup = async (req, res) => {
   const numOfUsers = req.body.numOfUsers;
   const usersId = req.body.usersId;
   const status = req.body.status;
+
   const connection = await getConnection();
   await connection.connect(function (err) {
     const query = `INSERT INTO \`Group\` (name, adminId, numOfUsers, usersId, status) VALUES (?, ?, ?, ?, ?)`;
     connection.query(
       query,
       [name, adminId, numOfUsers, usersId, status],
-      (err, result) => {
+      async (err, result) => {
         if (err) {
           console.error(err);
           return res.status(500).json({ error: "Internal server error" });
         }
+
         if (result.affectedRows === 0) {
           return res.status(404).json({ error: "User not found" });
         }
-        res.json({ message: "Group has been created" });
+
+        // Get the inserted group's id
+        const insertedGroupId = result.insertId;
+
+        // Insert the group id into the finishedPoralarCount table
+        const insertFinishedPoralarCountQuery = `INSERT INTO finishedPoralarCount (idGroup) VALUES (?)`;
+        connection.query(
+          insertFinishedPoralarCountQuery,
+          [insertedGroupId],
+          (err, result) => {
+            if (err) {
+              console.error(err);
+              return res.status(500).json({ error: "Internal server error" });
+            }
+
+            res.json({ message: "Group has been created" });
+          }
+        );
       }
     );
   });
@@ -225,46 +244,108 @@ const subscribeUser = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
-const finishedJuz = async(req,res)=>{
+const finishedJuz = async (req, res) => {
   try {
     const connection = await getConnection();
-    const{poraId,userId,idGroup} = req.body;
-    await connection.connect(function(err){
-      const query = `DELETE FROM bookedPoralar WHERE poraId = ${poraId} AND userId = ${userId} AND idGroup = ${idGroup}`;
-      connection.query(query,(err,result)=>{
-        if(err){
+    const { poraId, userId } = req.params;
+    const idGroup = req.body.idGroup;
+    await connection.connect(function (err) {
+      // 1
+      const query = `UPDATE bookedPoralar SET isDone = 1 WHERE poraId = ${poraId} AND userId = ${userId} AND idGroup = ${idGroup}`;
+      connection.query(query, (err, result) => {
+        if (err) {
           console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
+          return res.status(500).json({ error: "Internal server error" });
         }
-        res.json({message:`${poraId}-juz has been deleted `})
-      })
-    })
+        res.json({ message: `${poraId}-juz has been finished ` });
+
+        // 2
+        const query2 = `UPDATE finishedPoralarCount SET juzCount = juzCount + 1 WHERE idGroup = ${idGroup};`;
+        connection.query(query2, (err, result) => {
+          if (err) {
+            console.log(err);
+            return res.status(500).json({ error: "Internal server error" });
+          }
+        });
+      });
+    });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({error:"Internal server error"})
+    return res.status(500).json({ error: "Internal server error" });
   }
-}
-const cancelJuz = async (req,res)=>{
+};
+const cancelJuz = async (req, res) => {
   try {
     const connection = await getConnection();
-    const{poraId,userId,idGroup} = req.body;
-    await connection.connect(function(err){
+    const { poraId, userId } = req.params;
+    const idGroup = req.body.idGroup;
+    await connection.connect(function (err) {
       const query = `DELETE FROM bookedPoralar WHERE poraId = ${poraId} AND userId = ${userId} AND idGroup = ${idGroup}`;
-      connection.query(query,(err,result)=>{
-        if(err){
+      connection.query(query, (err, result) => {
+        if (err) {
           console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
+          return res.status(500).json({ error: "Internal server error" });
         }
-        res.json({message:`${poraId}-juz has been deleted `})
-      })
-    })
+        res.json({ message: `${poraId}-juz has been deleted ` });
+      });
+    });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({error:"Internal server error"})
+    return res.status(500).json({ error: "Internal server error" });
   }
-}
-
+};
+const showGroupProfile = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const groupId = req.params.id;
+    await connection.connect(function (err) {
+      const query = `SELECT name,kimga,hatmSoni FROM \`Group\` WHERE idGroup = ${groupId}`;
+      connection.query(query, (err, result) => {
+        if (err) {
+          console.log(err);
+          res.status(500).json({ error: "Internal Server Error" });
+        }
+        res.json(result);
+      });
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+const showGroupSubs = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const idGroup = req.params.id;
+    await connection.connect(function (err) {
+      if (err) {
+        console.log(err);
+      }
+      const query = `SELECT usersId FROM \`Group\` WHERE idGroup = ${idGroup}`;
+      connection.query(query, (err, result) => {
+        if (err) {
+          console.log(err);
+          res.status(500).json({ error: "Internal Server Error" });
+        }
+        const usersId = result;
+        const idsString = `${usersId[0].usersId.replace(/[\[\]']+/g, '').split(',').map(Number).filter((v, i, arr) => arr.indexOf(v) === i).join(',')}`;
+        console.log(idsString);
+        const query2 = `SELECT name, surname, phone FROM user WHERE find_in_set(userId,'${idsString}')`
+        connection.query(query2,(err,result)=>{
+          if (err) {
+            console.log(err);
+            res.status(500).json({ error: "Internal Server Error" });
+          }
+          res.json(result)
+        })
+      });
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+ 
 module.exports = {
   getHatm,
   chooseHatm,
@@ -277,7 +358,9 @@ module.exports = {
   getInvites,
   subscribeUser,
   finishedJuz,
-  cancelJuz
+  cancelJuz,
+  showGroupProfile,
+  showGroupSubs
 };
 
 // boshladim tugatdim
