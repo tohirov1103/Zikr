@@ -15,7 +15,7 @@ const getHatm = async (req, res) => {
     console.log(error);
   }
 };
-const chooseHatm = async (req, res) => {
+const chooseJuz = async (req, res) => {
   try {
     const connection = await getConnection();
     const userId = req.body.userId;
@@ -348,7 +348,7 @@ const showGroupSubs = async (req, res) => {
  
 module.exports = {
   getHatm,
-  chooseHatm,
+  chooseJuz,
   createGroup,
   getAllGroups,
   getPublicGroups,

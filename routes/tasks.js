@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   getHatm,
-  chooseHatm,
+  chooseJuz,
   createGroup,
   getAllGroups,
   getPublicGroups,
@@ -19,7 +19,7 @@ const {
 // Get Hatm route
 router.get("/hatm", getHatm);
 // Get img and name of user route
-router.post("/userId/poraId", chooseHatm);
+router.post("/userId/poraId", chooseJuz);
 // Post(Create) group
 router.post("/hatm/createGroup/:id", createGroup);
 // Get all groups

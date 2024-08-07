@@ -4,12 +4,15 @@ const cors = require('cors');
 const {connectDb} = require('./db/connectDb');
 const multer = require('multer');
 const task = require('./routes/tasks');
+const zikrTasks = require('./Zikr/routes/zikrRoutes');
 const app = express();
 
 app.use(cors())
 app.use(express.json());
 
-app.use('/',task)
+app.use('/tasks', task);
+app.use('/zikrs', zikrTasks);
+
 
 // Image Storage Engine
 const storage = multer.diskStorage({
