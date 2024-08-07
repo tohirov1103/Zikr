@@ -44,7 +44,7 @@ const chooseJuz = async (req, res) => {
               return res.status(404).json({ error: "User not found" });
             }
             const user = result[0];
-            res.json(user);
+            return res.json(user);
             // res.json(user);
           });
         }
@@ -96,7 +96,7 @@ const createGroup = async (req, res) => {
               return res.status(500).json({ error: "Internal server error" });
             }
 
-            res.json({ message: "Group has been created" });
+            return res.json({ message: "Group has been created" });
           }
         );
       }
@@ -115,7 +115,7 @@ const getAllGroups = async (req, res) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "User not found" });
       }
-      res.json(result);
+      return res.json(result);
     });
   });
 };
@@ -132,7 +132,7 @@ const getPublicGroups = async (req, res) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "User not found" });
       }
-      res.json(result);
+      return res.json(result);
     });
   });
 };
@@ -149,7 +149,7 @@ const getPrivateGroups = async (req, res) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "User not found" });
       }
-      res.json(result);
+      return res.json(result);
     });
   });
 };
@@ -166,7 +166,7 @@ const findUser = async (req, res) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: "User not found" });
       }
-      res.json(result);
+      return res.json(result);
     });
   });
 };
@@ -186,7 +186,7 @@ const inviteUser = async (req, res) => {
             console.log(err);
             return res.status(500).json({ error: "Internal server error" });
           }
-          res.json({ message: "Invitation sent", groupId, receiverId });
+          return res.json({ message: "Invitation sent", groupId, receiverId });
         }
       );
     });
@@ -205,7 +205,7 @@ const getInvites = async (req, res) => {
           console.log(err);
           return res.status(500).json({ error: "Internal server error" });
         }
-        res.json(result);
+        return res.json(result);
       });
     });
   } catch (error) {
@@ -235,7 +235,7 @@ const subscribeUser = async (req, res) => {
             console.log(err);
             return res.status(500).json({ error: "Internal server error" });
           }
-          res.json({ message: "User subscribed to group" });
+          return res.json({ message: "User subscribed to group" });
         });
       });
     });
@@ -303,14 +303,14 @@ const showGroupProfile = async (req, res) => {
       connection.query(query, (err, result) => {
         if (err) {
           console.log(err);
-          res.status(500).json({ error: "Internal Server Error" });
+          return res.status(500).json({ error: "Internal Server Error" });
         }
-        res.json(result);
+        return res.json(result);
       });
     });
   } catch (error) {
     console.log(error);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };
 const showGroupSubs = async (req, res) => {
@@ -334,15 +334,15 @@ const showGroupSubs = async (req, res) => {
         connection.query(query2,(err,result)=>{
           if (err) {
             console.log(err);
-            res.status(500).json({ error: "Internal Server Error" });
+            return res.status(500).json({ error: "Internal Server Error" });
           }
-          res.json(result)
+          return res.json(result)
         })
       });
     });
   } catch (error) {
     console.log(error);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };
  
