@@ -23,6 +23,6 @@ const getConnection = () => {
     if (!connection) {
       throw new Error('Database connection not established');
     }
-    return connection;
+    return connection.promise();
   };
 module.exports = {connectDb,getConnection};

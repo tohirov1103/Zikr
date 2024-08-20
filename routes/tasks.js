@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const {
-  getHatm,
   chooseJuz,
   createGroup,
   getAllGroups,
@@ -14,12 +13,11 @@ const {
   finishedJuz,
   cancelJuz,
   showGroupProfile,
-  showGroupSubs
+  showGroupSubs,
+  leaveGroup
 } = require("../controllers/operations");
-// Get Hatm route
-router.get("/hatm", getHatm);
 // Get img and name of user route
-router.post("/userId/poraId", chooseJuz);
+router.post("/userId/:userId/poraId/:poraId", chooseJuz);
 // Post(Create) group
 router.post("/hatm/createGroup/:id", createGroup);
 // Get all groups
@@ -30,11 +28,11 @@ router.get("/getPublic/:id", getPublicGroups);
 router.get("/getPrivate/:id", getPrivateGroups);
 //
 // Find Invinting user
-router.get("/findUses", findUser);
+router.get("/findUser", findUser);
 // Invite a user
 router.post("/groups/invite/:id", inviteUser);
 // Get Invites
-router.get("/groups/getall", getInvites);
+router.get("/groups/getInvites/:id", getInvites);
 // Subscribe a user
 router.post("/groups/subscribe", subscribeUser);
 // Cancelling juz
@@ -45,5 +43,7 @@ router.put('/finishedJuz/user/:userId/pora/:poraId',finishedJuz);
 router.get('/profile/groupId/:id',showGroupProfile);
 // Show Group Subs
 router.get('/subs/idGroup/:id',showGroupSubs);
+// Leave the groupe
+router.post('/leave-group', leaveGroup);
 
 module.exports = router;

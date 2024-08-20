@@ -1,35 +1,35 @@
 const { getConnection } = require("../../db/connectDb");
 
+
 const newUser = async (req, res) => {
   try {
     const { name, surname, phone, mail, image_url } = req.body;
+    const groups = "[]"; // Default empty JSON array for groups
 
+    // Validate required fields
     if (!name || !(phone || mail)) {
-      return res
-        .status(422)
-        .json(createResponse("422", "Unprocessable content"));
+      return res.status(422).json(createResponse("422", "Unprocessable content"));
     }
-    const connection = await getConnection();
-    await connection.connect(function (err) {
-      const query =
-        "INSERT INTO user (phone, mail, name, surname, image_url) VALUES (?, ?, ?, ?, ?)";
-      connection.query(
-        query,
-        [phone, mail, name, surname, image_url],
-        (err, result) => {
-          if (err) {
-            return res.status(500).json(createResponse("500", "Insert failed"));
-          }
 
-          const userId = result.insertId;
-          return res.status(200).json(createResponse("200", "ok", { userId }));
-        }
-      );
-    });
+    const connection = await getConnection();
+
+    try {
+      // Use a parameterized query to avoid SQL injection
+      const query = "INSERT INTO user (phone, mail, name, surname, image_url, `groups`) VALUES (?, ?, ?, ?, ?, ?)";
+      const [result] = await connection.execute(query, [phone, mail, name, surname, image_url, groups]);
+
+      const userId = result.insertId;
+      return res.status(200).json(createResponse("200", "ok", { userId }));
+    } catch (err) {
+      console.error("Insert error:", err.message);
+      return res.status(500).json(createResponse("500", "Insert failed"));
+    }
   } catch (error) {
+    console.error("Internal server error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 const newZikr = async (req, res) => {
   try {

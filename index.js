@@ -1,10 +1,11 @@
-const port = 3000;
+const port = 2005;
 const express = require('express');
 const cors = require('cors');
 const {connectDb} = require('./db/connectDb');
 const multer = require('multer');
 const task = require('./routes/tasks');
 const zikrTasks = require('./Zikr/routes/zikrRoutes');
+const adminTasks = require('./routes/admin');
 const app = express();
 
 app.use(cors())
@@ -12,6 +13,7 @@ app.use(express.json());
 
 app.use('/tasks', task);
 app.use('/zikrs', zikrTasks);
+app.use('/admin',adminTasks)
 
 
 // Image Storage Engine

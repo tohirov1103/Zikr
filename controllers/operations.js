@@ -1,358 +1,320 @@
-const { Hatm } = require("../models/index");
 const { getConnection } = require("../db/connectDb");
-const { response } = require("express");
-const poralar = require("../functions/pora");
-const { get } = require("../routes/tasks");
-// console.log(poralar);
-const getHatm = async (req, res) => {
-  try {
-    const hatm = await Hatm.findAll();
-    if (!hatm) {
-      res.json("Hatm not found");
-    }
-    res.json(hatm);
-  } catch (error) {
-    console.log(error);
-  }
-};
-const chooseJuz = async (req, res) => {
+
+const createGroup = async (req, res) => {
   try {
     const connection = await getConnection();
-    const userId = req.body.userId;
-    const poraId = req.body.poraId;
-    const idGroup = req.body.idGroup;
-    const isBooked = true;
+    const { name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni } = req.body;
+    const adminId = req.params.id;
 
-    await connection.connect(function (err) {
-      const query =
-        " INSERT INTO bookedPoralar (poraId, idGroup, userId,isBooked) VALUES (?, ?, ?, true)";
-      connection.query(
-        query,
-        [userId, idGroup, poraId, isBooked],
-        (err, result) => {
-          if (err) {
-            console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
-          }
-          const query = `SELECT name,image_url FROM user WHERE userId = ${userId}`;
-          connection.query(query, (err, result) => {
-            if (err) {
-              console.error(err);
-              return res.status(500).json({ error: "Internal server error" });
-            }
-            if (result.length === 0) {
-              return res.status(404).json({ error: "User not found" });
-            }
-            const user = result[0];
-            return res.json(user);
-            // res.json(user);
-          });
-        }
-      );
-    });
+    const insertGroupQuery = "INSERT INTO `Group` (name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    const [result] = await connection.query(insertGroupQuery, [name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni]);
 
-    // await connection.connect(function (err) {
+    if (result.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "Group not created"));
+    }
 
-    // });
+    const insertFinishedPoralarCountQuery = "INSERT INTO finishedPoralarCount (idGroup) VALUES (?)";
+    await connection.query(insertFinishedPoralarCountQuery, [result.insertId]);
+
+    return res.json(createResponse("200", "Group has been created", { groupId: result.insertId }));
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
-const createGroup = async (req, res) => {
-  const adminId = req.params.id;
-  const name = req.body.name;
-  const numOfUsers = req.body.numOfUsers;
-  const usersId = req.body.usersId;
-  const status = req.body.status;
 
-  const connection = await getConnection();
-  await connection.connect(function (err) {
-    const query = `INSERT INTO \`Group\` (name, adminId, numOfUsers, usersId, status) VALUES (?, ?, ?, ?, ?)`;
-    connection.query(
-      query,
-      [name, adminId, numOfUsers, usersId, status],
-      async (err, result) => {
-        if (err) {
-          console.error(err);
-          return res.status(500).json({ error: "Internal server error" });
-        }
+const updateGroup = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const groupId = req.params.id;
+    const { name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni } = req.body;
 
-        if (result.affectedRows === 0) {
-          return res.status(404).json({ error: "User not found" });
-        }
+    const updateGroupQuery = `
+      UPDATE \`Group\` 
+      SET 
+        name = ?, 
+        numOfUsers = ?, 
+        isPublic = ?, 
+        kimga = ?, 
+        guruhImg = ?, 
+        hatmSoni = ? 
+      WHERE idGroup = ?`;
 
-        // Get the inserted group's id
-        const insertedGroupId = result.insertId;
+    const [result] = await connection.query(updateGroupQuery, [
+      name,
+      numOfUsers,
+      isPublic,
+      kimga,
+      guruhImg,
+      hatmSoni,
+      groupId,
+    ]);
 
-        // Insert the group id into the finishedPoralarCount table
-        const insertFinishedPoralarCountQuery = `INSERT INTO finishedPoralarCount (idGroup) VALUES (?)`;
-        connection.query(
-          insertFinishedPoralarCountQuery,
-          [insertedGroupId],
-          (err, result) => {
-            if (err) {
-              console.error(err);
-              return res.status(500).json({ error: "Internal server error" });
-            }
+    if (result.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "Group not found"));
+    }
 
-            return res.json({ message: "Group has been created" });
-          }
-        );
-      }
-    );
-  });
+    return res.json(createResponse("200", "Group has been updated", { groupId }));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
 };
+
 const getAllGroups = async (req, res) => {
-  const connection = await getConnection();
-  await connection.connect(function (err) {
-    const query = "SELECT * FROM `Group` ";
-    connection.query(query, (err, result) => {
-      if (err) {
-        console.log(err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      return res.json(result);
-    });
-  });
+  try {
+    const connection = await getConnection();
+    const query = "SELECT * FROM `Group`";
+    const [groups] = await connection.query(query);
+    return res.json(createResponse("200", "Success", groups));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
 };
-const getPublicGroups = async (req, res) => {
-  const userId = req.params.id;
-  const connection = await getConnection();
-  await connection.connect(function (err) {
-    const query = `SELECT * FROM \`Group\` WHERE JSON_CONTAINS(usersId, '${userId}', '$') AND status = 'public';`;
-    connection.query(query, (err, result) => {
-      if (err) {
-        console.log(err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      return res.json(result);
-    });
-  });
+
+const getGroupsByPrivacy = async (req, res, isPublic) => {
+  try {
+    const connection = await getConnection();
+    const userId = req.params.id;
+    const query = `SELECT * FROM \`Group\` WHERE JSON_CONTAINS(usersId, ?, '$') AND isPublic = ?`;
+    const [groups] = await connection.query(query, [userId, isPublic ? true : false]);
+    return res.json(createResponse("200", "Success", groups));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
 };
-const getPrivateGroups = async (req, res) => {
-  const userId = req.params.id;
-  const connection = await getConnection();
-  await connection.connect(function (err) {
-    const query = `SELECT * FROM \`Group\` WHERE JSON_CONTAINS(usersId, '${userId}', '$') AND status = 'private';`;
-    connection.query(query, (err, result) => {
-      if (err) {
-        console.log(err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      return res.json(result);
-    });
-  });
+
+const getPublicGroups = (req, res) => getGroupsByPrivacy(req, res, true);
+const getPrivateGroups = (req, res) => getGroupsByPrivacy(req, res, false);
+
+const showGroupProfile = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const groupId = req.params.id;
+
+    const query = "SELECT name, kimga, hatmSoni FROM `Group` WHERE idGroup = ?";
+    const [groupProfile] = await connection.query(query, [groupId]);
+
+    return res.json(createResponse("200", "Success", groupProfile[0]));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json(createResponse("500", "Internal Server Error"));
+  }
 };
+
+const showGroupSubs = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const idGroup = req.params.id;
+
+    const query = "SELECT usersId FROM `Group` WHERE idGroup = ?";
+    const [result] = await connection.query(query, [idGroup]);
+
+    if (result.length === 0) {
+      return res.status(404).json(createResponse("404", "Group not found"));
+    }
+
+    const idsString = result[0].usersId.replace(/[\[\]']+/g, '').split(',').map(Number).join(',');
+    const userQuery = `SELECT name, surname, phone FROM user WHERE find_in_set(userId, ?) > 0`;
+
+    const [users] = await connection.query(userQuery, [idsString]);
+
+    return res.json(createResponse("200", "Success", users));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
+};
+
+const deleteGroup = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const groupId = req.params.id;
+
+    const deleteQuery = "DELETE FROM `Group` WHERE idGroup = ?";
+    const [result] = await connection.query(deleteQuery, [groupId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "Group not found"));
+    }
+
+    return res.json(createResponse("200", "Group has been deleted", { groupId }));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
+};
+
 const findUser = async (req, res) => {
-  const connection = await getConnection();
-  await connection.connect(function (err) {
-    const findUserId = req.body.findUserId;
-    const query = `SELECT * FORM \`user\` WHERE phonenumber = ${findUserId}`;
-    connection.query(query, (err, result) => {
-      if (err) {
-        console.log(err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      return res.json(result);
-    });
-  });
+  try {
+    const connection = await getConnection();
+    const phonenumber = req.params.phonenumber;
+    const query = "SELECT * FROM `user` WHERE phonenumber = ?";
+    const [user] = await connection.query(query, [phonenumber]);
+
+    if (user.length === 0) {
+      return res.status(404).json(createResponse("404", "User not found"));
+    }
+
+    return res.json(createResponse("200", "Success", user[0]));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
 };
+
 const inviteUser = async (req, res) => {
   try {
     const connection = await getConnection();
-    await connection.connect(function (err) {
-      const receiverId = req.params.id;
-      const { senderId, groupId, isInvite, isRead } = req.body;
-      const query =
-        "INSERT INTO notifications (senderId, receiverId, body, isInvite, isRead) VALUES (?,?,?,?,?)";
-      connection.query(
-        query,
-        [senderId, receiverId, groupId, isInvite, isRead],
-        (err, result) => {
-          if (err) {
-            console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
-          }
-          return res.json({ message: "Invitation sent", groupId, receiverId });
-        }
-      );
-    });
+    const receiverId = req.params.id;
+    const { senderId, groupId, isInvite } = req.body;
+
+    // Check if the user is already in the group
+    const checkQuery = "SELECT JSON_CONTAINS(usersId, ?, '$') AS isInGroup FROM `Group` WHERE idGroup = ?";
+    const [checkResult] = await connection.query(checkQuery, [receiverId, groupId]);
+
+    if (checkResult[0].isInGroup) {
+      return res.status(400).json(createResponse("400", "User is already in the group"));
+    }
+
+    const insertQuery = "INSERT INTO notifications (senderId, receiverId, groupId, isInvite) VALUES (?, ?, ?, ?)";
+    await connection.query(insertQuery, [senderId, receiverId, groupId, isInvite]);
+
+    return res.json(createResponse("200", "Invitation sent", { groupId, receiverId }));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
-const getInvites = async (req, res) => {
-  try {
-    const connection = getConnection();
-    await connection.connect(function (err) {
-      const getInviteOnly = "SELECT * FROM notifications WHERE isInvite = true";
-      connection.query(getInviteOnly, (err, result) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Internal server error" });
-        }
-        return res.json(result);
-      });
-    });
-  } catch (error) {
-    console.log(error);
-  }
-};
+
 const subscribeUser = async (req, res) => {
   try {
     const connection = await getConnection();
-    await connection.connect(function (err) {
-      const { userId, groupId } = req.body;
+    const { userId, groupId } = req.body;
 
-      // 1. Update the `Group` table
-      const groupQuery = `INSERT INTO \`Group\` (usersId, idGroup) 
-         VALUES (CAST(JSON_ARRAY_APPEND(usersId, '$', ${userId}) AS JSON), ${groupId})
-         ON DUPLICATE KEY UPDATE usersId = CAST(JSON_ARRAY_APPEND(usersId, '$', ${userId}) AS JSON)`;
-      connection.query(groupQuery, (err, groupResult) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Internal server error" });
-        }
+    const groupQuery = `UPDATE \`Group\` SET usersId = JSON_ARRAY_APPEND(usersId, '$', ?) WHERE idGroup = ?`;
+    await connection.query(groupQuery, [userId, groupId]);
 
-        // 2. Update the `user` table
-        const userQuery = `UPDATE \`user\` SET \`groups\` = CAST(JSON_ARRAY_APPEND(\`groups\`, '$', ${groupId}) AS JSON) WHERE \`userId\` = ${userId}`;
-        connection.query(userQuery, (err, userResult) => {
-          if (err) {
-            console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
-          }
-          return res.json({ message: "User subscribed to group" });
-        });
-      });
-    });
+    const userQuery = `UPDATE \`user\` SET \`groups\` = JSON_ARRAY_APPEND(\`groups\`, '$', ?) WHERE \`userId\` = ?`;
+    await connection.query(userQuery, [groupId, userId]);
+
+    return res.json(createResponse("200", "User subscribed to the group", { userId, groupId }));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
+const getInvites = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const userId = req.params.id;
+    const query = "SELECT * FROM notifications WHERE isInvite = true AND receiverId = ?";
+    const [invites] = await connection.query(query, [userId]);
+
+    return res.json(createResponse("200", "Success", invites));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
+};
+
+const chooseJuz = async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const { idGroup } = req.body;
+    const userId = req.params.userId;
+    const poraId = req.params.poraId;
+
+    const insertQuery = "INSERT INTO bookedPoralar (poraId, idGroup, userId, isBooked) VALUES (?, ?, ?, true)";
+    await connection.query(insertQuery, [poraId, idGroup, userId]);
+
+    const selectQuery = "SELECT name, image_url FROM user WHERE userId = ?";
+    const [rows] = await connection.query(selectQuery, [userId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json(createResponse("404", "User not found"));
+    }
+
+    return res.json(createResponse("200", "Success", rows[0]));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
+};
+
 const finishedJuz = async (req, res) => {
   try {
     const connection = await getConnection();
     const { poraId, userId } = req.params;
     const idGroup = req.body.idGroup;
-    await connection.connect(function (err) {
-      // 1
-      const query = `UPDATE bookedPoralar SET isDone = 1 WHERE poraId = ${poraId} AND userId = ${userId} AND idGroup = ${idGroup}`;
-      connection.query(query, (err, result) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Internal server error" });
-        }
-        res.json({ message: `${poraId}-juz has been finished ` });
 
-        // 2
-        const query2 = `UPDATE finishedPoralarCount SET juzCount = juzCount + 1 WHERE idGroup = ${idGroup};`;
-        connection.query(query2, (err, result) => {
-          if (err) {
-            console.log(err);
-            return res.status(500).json({ error: "Internal server error" });
-          }
-        });
-      });
-    });
+    const updateBookedPoralarQuery = "UPDATE bookedPoralar SET isDone = 1 WHERE poraId = ? AND userId = ? AND idGroup = ?";
+    await connection.query(updateBookedPoralarQuery, [poraId, userId, idGroup]);
+
+    const updateFinishedPoralarCountQuery = "UPDATE finishedPoralarCount SET juzCount = juzCount + 1 WHERE idGroup = ?";
+    await connection.query(updateFinishedPoralarCountQuery, [idGroup]);
+
+    return res.json(createResponse("200", `${poraId}-juz has been finished`, { poraId, userId }));
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error(error);
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 const cancelJuz = async (req, res) => {
   try {
     const connection = await getConnection();
     const { poraId, userId } = req.params;
     const idGroup = req.body.idGroup;
-    await connection.connect(function (err) {
-      const query = `DELETE FROM bookedPoralar WHERE poraId = ${poraId} AND userId = ${userId} AND idGroup = ${idGroup}`;
-      connection.query(query, (err, result) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Internal server error" });
-        }
-        res.json({ message: `${poraId}-juz has been deleted ` });
-      });
-    });
+
+    const deleteQuery = "DELETE FROM bookedPoralar WHERE poraId = ? AND userId = ? AND idGroup = ?";
+    await connection.query(deleteQuery, [poraId, userId, idGroup]);
+
+    return res.json(createResponse("200", `${poraId}-juz has been deleted`, { poraId, userId }));
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error(error);
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
-const showGroupProfile = async (req, res) => {
+
+const leaveGroup = async (req, res) => {
   try {
     const connection = await getConnection();
-    const groupId = req.params.id;
-    await connection.connect(function (err) {
-      const query = `SELECT name,kimga,hatmSoni FROM \`Group\` WHERE idGroup = ${groupId}`;
-      connection.query(query, (err, result) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Internal Server Error" });
-        }
-        return res.json(result);
-      });
-    });
+    const { userId, groupId } = req.body;
+
+    // Remove userId from the usersId array in the Group table
+    const groupQuery = `UPDATE \`Group\` SET usersId = JSON_REMOVE(usersId, JSON_UNQUOTE(JSON_SEARCH(usersId, 'one', ?))) WHERE idGroup = ? AND JSON_SEARCH(usersId, 'one', ?) IS NOT NULL`;
+    const [groupResult] = await connection.query(groupQuery, [userId, groupId, userId]);
+    if (groupResult.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "Group not found or user is not part of the group"));
+    }
+
+    // Remove groupId from the groups array in the user table
+    const userQuery = `UPDATE \`user\` SET \`groups\` = JSON_REMOVE(\`groups\`, JSON_UNQUOTE(JSON_SEARCH(\`groups\`, 'one', ?))) WHERE \`userId\` = ? AND JSON_SEARCH(\`groups\`, 'one', ?) IS NOT NULL`;
+    const [userResult] = await connection.query(userQuery, [groupId, userId, groupId]);
+
+    if (userResult.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "User not found or not part of the group"));
+    }
+
+    return res.json(createResponse("200", "User has left the group", { userId, groupId }));
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
+    return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
-const showGroupSubs = async (req, res) => {
-  try {
-    const connection = await getConnection();
-    const idGroup = req.params.id;
-    await connection.connect(function (err) {
-      if (err) {
-        console.log(err);
-      }
-      const query = `SELECT usersId FROM \`Group\` WHERE idGroup = ${idGroup}`;
-      connection.query(query, (err, result) => {
-        if (err) {
-          console.log(err);
-          res.status(500).json({ error: "Internal Server Error" });
-        }
-        const usersId = result;
-        const idsString = `${usersId[0].usersId.replace(/[\[\]']+/g, '').split(',').map(Number).filter((v, i, arr) => arr.indexOf(v) === i).join(',')}`;
-        console.log(idsString);
-        const query2 = `SELECT name, surname, phone FROM user WHERE find_in_set(userId,'${idsString}')`
-        connection.query(query2,(err,result)=>{
-          if (err) {
-            console.log(err);
-            return res.status(500).json({ error: "Internal Server Error" });
-          }
-          return res.json(result)
-        })
-      });
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: "Internal Server Error" });
-  }
-};
- 
+
+
 module.exports = {
-  getHatm,
   chooseJuz,
   createGroup,
   getAllGroups,
   getPublicGroups,
   getPrivateGroups,
+  deleteGroup,
   findUser,
   inviteUser,
   getInvites,
@@ -360,7 +322,14 @@ module.exports = {
   finishedJuz,
   cancelJuz,
   showGroupProfile,
-  showGroupSubs
+  showGroupSubs,
+  leaveGroup
 };
 
-// boshladim tugatdim
+function createResponse(status, message, data = null) {
+  return {
+    status,
+    message,
+    data,
+  };
+}
