@@ -1,19 +1,38 @@
 const { getConnection } = require("../db/connectDb");
 
+// Helper function for consistent response creation
+function createResponse(status, message, data = null) {
+  return { status, message, data };
+}
+
+// Example validation (can be expanded for all functions)
+const validateCreateGroup = ({ name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni }) => {
+  return name && numOfUsers && usersId && isPublic !== undefined && kimga && guruhImg && hatmSoni;
+};
+
 const createGroup = async (req, res) => {
+  const { name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni } = req.body;
+  const adminId = req.params.id;
+
+  if (!validateCreateGroup(req.body)) {
+    return res.status(400).json(createResponse("400", "Invalid input data"));
+  }
+
   try {
     const connection = await getConnection();
-    const { name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni } = req.body;
-    const adminId = req.params.id;
-
-    const insertGroupQuery = "INSERT INTO `Group` (name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    const insertGroupQuery = `
+      INSERT INTO \`Group\` (name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
     const [result] = await connection.query(insertGroupQuery, [name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json(createResponse("404", "Group not created"));
     }
 
-    const insertFinishedPoralarCountQuery = "INSERT INTO finishedPoralarCount (idGroup) VALUES (?)";
+    const insertFinishedPoralarCountQuery = `
+      INSERT INTO finishedPoralarCount (idGroup) VALUES (?)
+    `;
     await connection.query(insertFinishedPoralarCountQuery, [result.insertId]);
 
     return res.json(createResponse("200", "Group has been created", { groupId: result.insertId }));
@@ -24,37 +43,44 @@ const createGroup = async (req, res) => {
 };
 
 const updateGroup = async (req, res) => {
+  const { name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni } = req.body;
+  const groupId = req.params.id;
+
+  if (!groupId || !name || !numOfUsers || isPublic === undefined || !kimga || !guruhImg || !hatmSoni) {
+    return res.status(400).json(createResponse("400", "Invalid input data"));
+  }
+
   try {
     const connection = await getConnection();
-    const groupId = req.params.id;
-    const { name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni } = req.body;
-
     const updateGroupQuery = `
-      UPDATE \`Group\` 
-      SET 
-        name = ?, 
-        numOfUsers = ?, 
-        isPublic = ?, 
-        kimga = ?, 
-        guruhImg = ?, 
-        hatmSoni = ? 
-      WHERE idGroup = ?`;
-
-    const [result] = await connection.query(updateGroupQuery, [
-      name,
-      numOfUsers,
-      isPublic,
-      kimga,
-      guruhImg,
-      hatmSoni,
-      groupId,
-    ]);
+      UPDATE \`Group\`
+      SET name = ?, numOfUsers = ?, isPublic = ?, kimga = ?, guruhImg = ?, hatmSoni = ?
+      WHERE idGroup = ?
+    `;
+    const [result] = await connection.query(updateGroupQuery, [name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni, groupId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json(createResponse("404", "Group not found"));
     }
 
     return res.json(createResponse("200", "Group has been updated", { groupId }));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(createResponse("500", "Internal server error"));
+  }
+};
+
+const getGroups = async (req, res, isPublic) => {
+  try {
+    const connection = await getConnection();
+    const userId = req.params.id;
+    const query = `
+      SELECT * FROM \`Group\`
+      WHERE JSON_CONTAINS(usersId, ?, '$') AND isPublic = ?
+    `;
+    const [groups] = await connection.query(query, [userId, isPublic]);
+
+    return res.json(createResponse("200", "Success", groups));
   } catch (err) {
     console.error(err);
     return res.status(500).json(createResponse("500", "Internal server error"));
@@ -73,21 +99,8 @@ const getAllGroups = async (req, res) => {
   }
 };
 
-const getGroupsByPrivacy = async (req, res, isPublic) => {
-  try {
-    const connection = await getConnection();
-    const userId = req.params.id;
-    const query = `SELECT * FROM \`Group\` WHERE JSON_CONTAINS(usersId, ?, '$') AND isPublic = ?`;
-    const [groups] = await connection.query(query, [userId, isPublic ? true : false]);
-    return res.json(createResponse("200", "Success", groups));
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json(createResponse("500", "Internal server error"));
-  }
-};
-
-const getPublicGroups = (req, res) => getGroupsByPrivacy(req, res, true);
-const getPrivateGroups = (req, res) => getGroupsByPrivacy(req, res, false);
+const getPublicGroups = (req, res) => getGroups(req, res, true);
+const getPrivateGroups = (req, res) => getGroups(req, res, false);
 
 const showGroupProfile = async (req, res) => {
   try {
@@ -96,6 +109,10 @@ const showGroupProfile = async (req, res) => {
 
     const query = "SELECT name, kimga, hatmSoni FROM `Group` WHERE idGroup = ?";
     const [groupProfile] = await connection.query(query, [groupId]);
+
+    if (groupProfile.length === 0) {
+      return res.status(404).json(createResponse("404", "Group not found"));
+    }
 
     return res.json(createResponse("200", "Success", groupProfile[0]));
   } catch (error) {
@@ -150,7 +167,7 @@ const deleteGroup = async (req, res) => {
 const findUser = async (req, res) => {
   try {
     const connection = await getConnection();
-    const phonenumber = req.params.phonenumber;
+    const phonenumber = req.query.phonenumber;
     const query = "SELECT * FROM `user` WHERE phonenumber = ?";
     const [user] = await connection.query(query, [phonenumber]);
 
@@ -194,10 +211,18 @@ const subscribeUser = async (req, res) => {
     const connection = await getConnection();
     const { userId, groupId } = req.body;
 
-    const groupQuery = `UPDATE \`Group\` SET usersId = JSON_ARRAY_APPEND(usersId, '$', ?) WHERE idGroup = ?`;
+    const groupQuery = `
+      UPDATE \`Group\`
+      SET usersId = JSON_ARRAY_APPEND(usersId, '$', ?)
+      WHERE idGroup = ?
+    `;
     await connection.query(groupQuery, [userId, groupId]);
 
-    const userQuery = `UPDATE \`user\` SET \`groups\` = JSON_ARRAY_APPEND(\`groups\`, '$', ?) WHERE \`userId\` = ?`;
+    const userQuery = `
+      UPDATE \`user\`
+      SET \`groups\` = JSON_ARRAY_APPEND(\`groups\`, '$', ?)
+      WHERE \`userId\` = ?
+    `;
     await connection.query(userQuery, [groupId, userId]);
 
     return res.json(createResponse("200", "User subscribed to the group", { userId, groupId }));
@@ -228,7 +253,10 @@ const chooseJuz = async (req, res) => {
     const userId = req.params.userId;
     const poraId = req.params.poraId;
 
-    const insertQuery = "INSERT INTO bookedPoralar (poraId, idGroup, userId, isBooked) VALUES (?, ?, ?, true)";
+    const insertQuery = `
+      INSERT INTO bookedPoralar (poraId, idGroup, userId, isBooked)
+      VALUES (?, ?, ?, true)
+    `;
     await connection.query(insertQuery, [poraId, idGroup, userId]);
 
     const selectQuery = "SELECT name, image_url FROM user WHERE userId = ?";
@@ -251,10 +279,18 @@ const finishedJuz = async (req, res) => {
     const { poraId, userId } = req.params;
     const idGroup = req.body.idGroup;
 
-    const updateBookedPoralarQuery = "UPDATE bookedPoralar SET isDone = 1 WHERE poraId = ? AND userId = ? AND idGroup = ?";
+    const updateBookedPoralarQuery = `
+      UPDATE bookedPoralar
+      SET isDone = 1
+      WHERE poraId = ? AND userId = ? AND idGroup = ?
+    `;
     await connection.query(updateBookedPoralarQuery, [poraId, userId, idGroup]);
 
-    const updateFinishedPoralarCountQuery = "UPDATE finishedPoralarCount SET juzCount = juzCount + 1 WHERE idGroup = ?";
+    const updateFinishedPoralarCountQuery = `
+      UPDATE finishedPoralarCount
+      SET juzCount = juzCount + 1
+      WHERE idGroup = ?
+    `;
     await connection.query(updateFinishedPoralarCountQuery, [idGroup]);
 
     return res.json(createResponse("200", `${poraId}-juz has been finished`, { poraId, userId }));
@@ -270,7 +306,10 @@ const cancelJuz = async (req, res) => {
     const { poraId, userId } = req.params;
     const idGroup = req.body.idGroup;
 
-    const deleteQuery = "DELETE FROM bookedPoralar WHERE poraId = ? AND userId = ? AND idGroup = ?";
+    const deleteQuery = `
+      DELETE FROM bookedPoralar
+      WHERE poraId = ? AND userId = ? AND idGroup = ?
+    `;
     await connection.query(deleteQuery, [poraId, userId, idGroup]);
 
     return res.json(createResponse("200", `${poraId}-juz has been deleted`, { poraId, userId }));
@@ -286,14 +325,22 @@ const leaveGroup = async (req, res) => {
     const { userId, groupId } = req.body;
 
     // Remove userId from the usersId array in the Group table
-    const groupQuery = `UPDATE \`Group\` SET usersId = JSON_REMOVE(usersId, JSON_UNQUOTE(JSON_SEARCH(usersId, 'one', ?))) WHERE idGroup = ? AND JSON_SEARCH(usersId, 'one', ?) IS NOT NULL`;
+    const groupQuery = `
+      UPDATE \`Group\`
+      SET usersId = JSON_REMOVE(usersId, JSON_UNQUOTE(JSON_SEARCH(usersId, 'one', ?)))
+      WHERE idGroup = ? AND JSON_SEARCH(usersId, 'one', ?) IS NOT NULL
+    `;
     const [groupResult] = await connection.query(groupQuery, [userId, groupId, userId]);
     if (groupResult.affectedRows === 0) {
       return res.status(404).json(createResponse("404", "Group not found or user is not part of the group"));
     }
 
     // Remove groupId from the groups array in the user table
-    const userQuery = `UPDATE \`user\` SET \`groups\` = JSON_REMOVE(\`groups\`, JSON_UNQUOTE(JSON_SEARCH(\`groups\`, 'one', ?))) WHERE \`userId\` = ? AND JSON_SEARCH(\`groups\`, 'one', ?) IS NOT NULL`;
+    const userQuery = `
+      UPDATE \`user\`
+      SET \`groups\` = JSON_REMOVE(\`groups\`, JSON_UNQUOTE(JSON_SEARCH(\`groups\`, 'one', ?)))
+      WHERE \`userId\` = ? AND JSON_SEARCH(\`groups\`, 'one', ?) IS NOT NULL
+    `;
     const [userResult] = await connection.query(userQuery, [groupId, userId, groupId]);
 
     if (userResult.affectedRows === 0) {
@@ -306,7 +353,6 @@ const leaveGroup = async (req, res) => {
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
-
 
 module.exports = {
   chooseJuz,
@@ -325,11 +371,3 @@ module.exports = {
   showGroupSubs,
   leaveGroup
 };
-
-function createResponse(status, message, data = null) {
-  return {
-    status,
-    message,
-    data,
-  };
-}
