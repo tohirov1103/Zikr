@@ -6,13 +6,18 @@ function createResponse(status, message, data = null) {
 }
 
 // Example validation (can be expanded for all functions)
-const validateCreateGroup = ({ name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni }) => {
-  return name && numOfUsers && usersId && isPublic !== undefined && kimga && guruhImg && hatmSoni;
+const validateCreateGroup = ({ name, isPublic, kimga, guruhImg, hatmSoni }) => {
+  return name && isPublic !== undefined && kimga && guruhImg && hatmSoni;
 };
 
 const createGroup = async (req, res) => {
-  const { name, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni } = req.body;
-  const adminId = req.params.id;
+  const { name, isPublic, kimga, guruhImg, hatmSoni } = req.body;
+  const adminId = req.params.adminId;
+  console.log(adminId);
+
+  if (!adminId) {
+    return res.status(400).json(createResponse("400", "Admin ID is required"));
+  }
 
   if (!validateCreateGroup(req.body)) {
     return res.status(400).json(createResponse("400", "Invalid input data"));
@@ -20,44 +25,60 @@ const createGroup = async (req, res) => {
 
   try {
     const connection = await getConnection();
-    const insertGroupQuery = `
-      INSERT INTO \`Group\` (name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    const [result] = await connection.query(insertGroupQuery, [name, adminId, numOfUsers, usersId, isPublic, kimga, guruhImg, hatmSoni]);
+    // Start transaction to ensure atomicity
+    await connection.beginTransaction();
 
-    if (result.affectedRows === 0) {
+    const insertGroupQuery = `
+      INSERT INTO \`Group\` (name, adminId, isPublic, guruhImg, kimga, hatmSoni)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const [groupResult] = await connection.query(insertGroupQuery, [name, adminId, isPublic, guruhImg, kimga, hatmSoni]);
+
+    if (groupResult.affectedRows === 0) {
+      await connection.rollback();
       return res.status(404).json(createResponse("404", "Group not created"));
     }
 
-    const insertFinishedPoralarCountQuery = `
-      INSERT INTO finishedPoralarCount (idGroup) VALUES (?)
+    // Automatically add the creator as an admin in the group_members table
+    const insertMemberQuery = `
+      INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 'admin')
     `;
-    await connection.query(insertFinishedPoralarCountQuery, [result.insertId]);
+    await connection.query(insertMemberQuery, [groupResult.insertId, adminId]);
 
-    return res.json(createResponse("200", "Group has been created", { groupId: result.insertId }));
+    // Initialize the finishedPoralarCount for the new group
+    const insertFinishedCountQuery = `
+      INSERT INTO finishedPoralarCount (idGroup, juzCount)
+      VALUES (?, 0)
+    `;
+    await connection.query(insertFinishedCountQuery, [groupResult.insertId]);
+
+    // Commit the transaction
+    await connection.commit();
+
+    return res.json(createResponse("200", "Group has been created", { groupId: groupResult.insertId }));
   } catch (err) {
-    console.error(err);
+    console.error("Error creating group:", err);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
 
+
 const updateGroup = async (req, res) => {
-  const { name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni } = req.body;
+  const { name, isPublic, guruhImg, kimga, hatmSoni } = req.body;
   const groupId = req.params.id;
 
-  if (!groupId || !name || !numOfUsers || isPublic === undefined || !kimga || !guruhImg || !hatmSoni) {
+  if (!groupId || !name || isPublic === undefined || !guruhImg || !kimga || !hatmSoni) {
     return res.status(400).json(createResponse("400", "Invalid input data"));
   }
 
   try {
     const connection = await getConnection();
     const updateGroupQuery = `
-      UPDATE \`Group\`
-      SET name = ?, numOfUsers = ?, isPublic = ?, kimga = ?, guruhImg = ?, hatmSoni = ?
+      UPDATE Group
+      SET name = ?, isPublic = ?, guruhImg = ?, kimga = ?, hatmSoni = ?
       WHERE idGroup = ?
     `;
-    const [result] = await connection.query(updateGroupQuery, [name, numOfUsers, isPublic, kimga, guruhImg, hatmSoni, groupId]);
+    const [result] = await connection.query(updateGroupQuery, [name, isPublic, guruhImg, kimga, hatmSoni, groupId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json(createResponse("404", "Group not found"));
@@ -70,15 +91,32 @@ const updateGroup = async (req, res) => {
   }
 };
 
+
 const getGroups = async (req, res, isPublic) => {
   try {
     const connection = await getConnection();
-    const userId = req.params.id;
+    const {userId} = req.query;
+
+    console.log('User ID:', userId);
+    console.log('Is Public:', isPublic);
+
+    // Updated query to join Group with group_members table
     const query = `
-      SELECT * FROM \`Group\`
-      WHERE JSON_CONTAINS(usersId, ?, '$') AND isPublic = ?
+      SELECT g.*
+      FROM \`Group\` g
+      INNER JOIN group_members gm ON g.idGroup = gm.group_id
+      WHERE gm.user_id = ? AND g.isPublic = ?
     `;
+
     const [groups] = await connection.query(query, [userId, isPublic]);
+
+
+    // Check if groups exist before responding
+    if (!groups || groups.length === 0) {
+      return res.status(404).json(createResponse("404", "No groups found"));
+    }
+
+    console.log('Groups:', groups);
 
     return res.json(createResponse("200", "Success", groups));
   } catch (err) {
@@ -86,12 +124,22 @@ const getGroups = async (req, res, isPublic) => {
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const getAllGroups = async (req, res) => {
   try {
     const connection = await getConnection();
-    const query = "SELECT * FROM `Group`";
-    const [groups] = await connection.query(query);
+    const {userId} = req.query; // User ID passed as a parameter to filter groups
+
+    const query = `
+      SELECT g.*
+      FROM \`Group\` g
+      INNER JOIN group_members gm ON g.idGroup = gm.group_id
+      WHERE gm.user_id = ?
+    `;
+
+    const [groups] = await connection.query(query, [userId]);
+
     return res.json(createResponse("200", "Success", groups));
   } catch (err) {
     console.error(err);
@@ -99,51 +147,51 @@ const getAllGroups = async (req, res) => {
   }
 };
 
-const getPublicGroups = (req, res) => getGroups(req, res, true);
-const getPrivateGroups = (req, res) => getGroups(req, res, false);
 
-const showGroupProfile = async (req, res) => {
+const getPublicGroups = (req, res) => {
+  return getGroups(req, res, true);  // true for public groups
+};
+
+const getPrivateGroups = (req, res) => {
+  return getGroups(req, res, false);  // false for private groups
+};
+
+
+const showGroupDetails = async (req, res) => {
   try {
     const connection = await getConnection();
     const groupId = req.params.id;
 
-    const query = "SELECT name, kimga, hatmSoni FROM `Group` WHERE idGroup = ?";
-    const [groupProfile] = await connection.query(query, [groupId]);
+    // Step 1: Fetch the group profile information
+    const groupProfileQuery = "SELECT name, kimga, hatmSoni FROM `Group` WHERE idGroup = ?";
+    const [groupProfile] = await connection.query(groupProfileQuery, [groupId]);
 
     if (groupProfile.length === 0) {
       return res.status(404).json(createResponse("404", "Group not found"));
     }
 
-    return res.json(createResponse("200", "Success", groupProfile[0]));
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json(createResponse("500", "Internal Server Error"));
-  }
-};
+    // Step 2: Fetch the group subscribers (members) from group_members table
+    const subscribersQuery = `
+      SELECT u.name, u.surname, u.phone
+      FROM group_members gm
+      INNER JOIN user u ON gm.user_id = u.userId
+      WHERE gm.group_id = ?
+    `;
+    const [subscribers] = await connection.query(subscribersQuery, [groupId]);
 
-const showGroupSubs = async (req, res) => {
-  try {
-    const connection = await getConnection();
-    const idGroup = req.params.id;
+    // Combine both group profile and subscriber information in the response
+    const response = {
+      groupProfile: groupProfile[0],
+      subscribers: subscribers
+    };
 
-    const query = "SELECT usersId FROM `Group` WHERE idGroup = ?";
-    const [result] = await connection.query(query, [idGroup]);
-
-    if (result.length === 0) {
-      return res.status(404).json(createResponse("404", "Group not found"));
-    }
-
-    const idsString = result[0].usersId.replace(/[\[\]']+/g, '').split(',').map(Number).join(',');
-    const userQuery = `SELECT name, surname, phone FROM user WHERE find_in_set(userId, ?) > 0`;
-
-    const [users] = await connection.query(userQuery, [idsString]);
-
-    return res.json(createResponse("200", "Success", users));
+    return res.json(createResponse("200", "Success", response));
   } catch (err) {
     console.error(err);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const deleteGroup = async (req, res) => {
   try {
@@ -167,11 +215,14 @@ const deleteGroup = async (req, res) => {
 const findUser = async (req, res) => {
   try {
     const connection = await getConnection();
-    const phonenumber = req.query.phonenumber;
-    const query = "SELECT * FROM `user` WHERE phonenumber = ?";
-    const [user] = await connection.query(query, [phonenumber]);
+    const {phone} = req.query;
+    
+    console.log("Phone number received:", phone);
+    const query = "SELECT * FROM `user` WHERE phone = ?";
+    const [user] = await connection.query(query, [phone]);
 
-    if (user.length === 0) {
+    console.log("Executing query:", query, phone);
+    if (user.length == 0) {
       return res.status(404).json(createResponse("404", "User not found"));
     }
 
@@ -211,19 +262,16 @@ const subscribeUser = async (req, res) => {
     const connection = await getConnection();
     const { userId, groupId } = req.body;
 
-    const groupQuery = `
-      UPDATE \`Group\`
-      SET usersId = JSON_ARRAY_APPEND(usersId, '$', ?)
-      WHERE idGroup = ?
-    `;
-    await connection.query(groupQuery, [userId, groupId]);
+    // Check if already subscribed
+    const checkQuery = "SELECT * FROM group_members WHERE user_id = ? AND group_id = ?";
+    const [exists] = await connection.query(checkQuery, [userId, groupId]);
+    if (exists.length > 0) {
+      return res.status(400).json(createResponse("400", "User already subscribed to the group"));
+    }
 
-    const userQuery = `
-      UPDATE \`user\`
-      SET \`groups\` = JSON_ARRAY_APPEND(\`groups\`, '$', ?)
-      WHERE \`userId\` = ?
-    `;
-    await connection.query(userQuery, [groupId, userId]);
+    // Subscribe user to group
+    const subscribeQuery = "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 'member')";
+    await connection.query(subscribeQuery, [groupId, userId]);
 
     return res.json(createResponse("200", "User subscribed to the group", { userId, groupId }));
   } catch (error) {
@@ -231,6 +279,7 @@ const subscribeUser = async (req, res) => {
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const getInvites = async (req, res) => {
   try {
@@ -253,39 +302,75 @@ const chooseJuz = async (req, res) => {
     const userId = req.params.userId;
     const poraId = req.params.poraId;
 
+    // Start a transaction
+    await connection.beginTransaction();
+
+    // Check if the Juz is already booked
+    const checkQuery = `
+      SELECT * FROM bookedPoralar 
+      WHERE poraId = ? AND idGroup = ? AND isBooked = true;
+    `;
+    const [alreadyBooked] = await connection.query(checkQuery, [poraId, idGroup]);
+
+    if (alreadyBooked.length > 0) {
+      // If the Juz is already booked, roll back and return an error
+      await connection.rollback();
+      return res.status(409).json({ message: "This Juz is already booked" });
+    }
+
+    // If not booked, proceed to book the Juz
     const insertQuery = `
       INSERT INTO bookedPoralar (poraId, idGroup, userId, isBooked)
       VALUES (?, ?, ?, true)
     `;
     await connection.query(insertQuery, [poraId, idGroup, userId]);
 
+    // Commit the transaction
+    await connection.commit();
+
+    // Retrieve user details for the response
     const selectQuery = "SELECT name, image_url FROM user WHERE userId = ?";
     const [rows] = await connection.query(selectQuery, [userId]);
 
     if (rows.length === 0) {
-      return res.status(404).json(createResponse("404", "User not found"));
+      return res.status(404).json({ message: "User not found" });
     }
 
-    return res.json(createResponse("200", "Success", rows[0]));
+    return res.json({ message: "Juz successfully booked", userDetails: rows[0] });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json(createResponse("500", "Internal server error"));
+    let connection = await getConnection();
+    // If any error occurs, roll back the transaction
+    await connection.rollback();
+    console.error("Error booking Juz:", err);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 const finishedJuz = async (req, res) => {
   try {
     const connection = await getConnection();
-    const { poraId, userId } = req.params;
-    const idGroup = req.body.idGroup;
+    const { poraId, userId } = req.params;  // Ensure these are correctly provided in the URL
+    const idGroup = req.body.idGroup;  // Ensure idGroup is passed in the request body
 
+    // Start a transaction to ensure both operations either complete successfully or rollback
+    await connection.beginTransaction();
+
+    // Update the booking to mark as done
     const updateBookedPoralarQuery = `
       UPDATE bookedPoralar
       SET isDone = 1
-      WHERE poraId = ? AND userId = ? AND idGroup = ?
+      WHERE poraId = ? AND userId = ? AND idGroup = ? AND isBooked = 1
     `;
-    await connection.query(updateBookedPoralarQuery, [poraId, userId, idGroup]);
+    const [updateResult] = await connection.query(updateBookedPoralarQuery, [poraId, userId, idGroup]);
 
+    // Check if the update actually updated any rows
+    if (updateResult.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json(createResponse("404", `No active booking found for ${poraId}-juz with user ID ${userId} in group ID ${idGroup}`));
+    }
+
+    // Update the count of finished Juz in the group
     const updateFinishedPoralarCountQuery = `
       UPDATE finishedPoralarCount
       SET juzCount = juzCount + 1
@@ -293,58 +378,70 @@ const finishedJuz = async (req, res) => {
     `;
     await connection.query(updateFinishedPoralarCountQuery, [idGroup]);
 
+    // Commit the transaction if all is well
+    await connection.commit();
+
     return res.json(createResponse("200", `${poraId}-juz has been finished`, { poraId, userId }));
   } catch (error) {
-    console.error(error);
+    let connection = await getConnection();
+    // If any error occurs, rollback the transaction
+    await connection.rollback();
+    console.error("Error finishing Juz:", error);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
 
+
 const cancelJuz = async (req, res) => {
   try {
     const connection = await getConnection();
-    const { poraId, userId } = req.params;
-    const idGroup = req.body.idGroup;
+    const { poraId, userId } = req.params;  // Ensure that these params are properly passed in the request.
+    const idGroup = req.body.idGroup;  // Ensure that idGroup is passed in the request body.
+
+    // Start a transaction
+    await connection.beginTransaction();
 
     const deleteQuery = `
       DELETE FROM bookedPoralar
       WHERE poraId = ? AND userId = ? AND idGroup = ?
     `;
-    await connection.query(deleteQuery, [poraId, userId, idGroup]);
+    const [result] = await connection.query(deleteQuery, [poraId, userId, idGroup]);
+
+    // Check if the delete operation actually deleted anything
+    if (result.affectedRows === 0) {
+      // If nothing was deleted, rollback and inform the user
+      await connection.rollback();
+      return res.status(404).json(createResponse("404", `No booking found for ${poraId}-juz with user ID ${userId} in group ID ${idGroup}`, { poraId, userId }));
+    }
+
+    // Commit the transaction
+    await connection.commit();
 
     return res.json(createResponse("200", `${poraId}-juz has been deleted`, { poraId, userId }));
   } catch (error) {
-    console.error(error);
+    let connection = await getConnection();
+    // If any error occurs, roll back the transaction
+    await connection.rollback();
+    console.error("Error cancelling booking:", error);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const leaveGroup = async (req, res) => {
   try {
     const connection = await getConnection();
     const { userId, groupId } = req.body;
 
-    // Remove userId from the usersId array in the Group table
-    const groupQuery = `
-      UPDATE \`Group\`
-      SET usersId = JSON_REMOVE(usersId, JSON_UNQUOTE(JSON_SEARCH(usersId, 'one', ?)))
-      WHERE idGroup = ? AND JSON_SEARCH(usersId, 'one', ?) IS NOT NULL
+    // Remove the user from the group_members table
+    const deleteQuery = `
+      DELETE FROM group_members
+      WHERE user_id = ? AND group_id = ?
     `;
-    const [groupResult] = await connection.query(groupQuery, [userId, groupId, userId]);
-    if (groupResult.affectedRows === 0) {
-      return res.status(404).json(createResponse("404", "Group not found or user is not part of the group"));
-    }
+    const [result] = await connection.query(deleteQuery, [userId, groupId]);
 
-    // Remove groupId from the groups array in the user table
-    const userQuery = `
-      UPDATE \`user\`
-      SET \`groups\` = JSON_REMOVE(\`groups\`, JSON_UNQUOTE(JSON_SEARCH(\`groups\`, 'one', ?)))
-      WHERE \`userId\` = ? AND JSON_SEARCH(\`groups\`, 'one', ?) IS NOT NULL
-    `;
-    const [userResult] = await connection.query(userQuery, [groupId, userId, groupId]);
-
-    if (userResult.affectedRows === 0) {
-      return res.status(404).json(createResponse("404", "User not found or not part of the group"));
+    if (result.affectedRows === 0) {
+      return res.status(404).json(createResponse("404", "User not found in the group or group does not exist"));
     }
 
     return res.json(createResponse("200", "User has left the group", { userId, groupId }));
@@ -354,10 +451,12 @@ const leaveGroup = async (req, res) => {
   }
 };
 
+
 module.exports = {
   chooseJuz,
   createGroup,
   getAllGroups,
+  getGroups,
   getPublicGroups,
   getPrivateGroups,
   deleteGroup,
@@ -367,7 +466,6 @@ module.exports = {
   subscribeUser,
   finishedJuz,
   cancelJuz,
-  showGroupProfile,
-  showGroupSubs,
+  showGroupDetails,
   leaveGroup
 };

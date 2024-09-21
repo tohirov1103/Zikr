@@ -1,28 +1,54 @@
 const { getConnection } = require("../../db/connectDb");
-
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 
 const newUser = async (req, res) => {
   try {
-    const { name, surname, phone, mail, image_url } = req.body;
-    const groups = "[]"; // Default empty JSON array for groups
+    const { name, surname, phone, mail, image_url, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10); // Hashing the password
 
     // Validate required fields
-    if (!name || !(phone || mail)) {
-      return res.status(422).json(createResponse("422", "Unprocessable content"));
+    if (!name || !surname || !phone || !mail || !password) { // Ensuring all necessary fields are provided
+      return res.status(400).json(createResponse("400", "Missing required fields"));
     }
 
     const connection = await getConnection();
 
     try {
-      // Use a parameterized query to avoid SQL injection
-      const query = "INSERT INTO user (phone, mail, name, surname, image_url, `groups`) VALUES (?, ?, ?, ?, ?, ?)";
-      const [result] = await connection.execute(query, [phone, mail, name, surname, image_url, groups]);
+      // SQL query without the groups field, as it is no longer in your schema
+      const query = `
+        INSERT INTO user (phone, mail, name, surname, image_url, password)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+      const [result] = await connection.execute(query, [phone, mail, name, surname, image_url, hashedPassword]);
 
-      const userId = result.insertId;
-      return res.status(200).json(createResponse("200", "ok", { userId }));
+      const userId = result.insertId; // Getting the user ID from the inserted row
+
+      // Generate JWT token after successful user creation
+      const token = jwt.sign(
+        { userId, phone, mail }, // Payload
+        process.env.JWT_SECRET,  // JWT secret from environment variables
+        { expiresIn: '1h' }      // Token expiration time
+      );
+
+      // Successful response with token
+      return res.status(201).json({
+        message: "User registered successfully",
+        data: {
+          userId,
+          token,
+          user: {
+            name,
+            surname,
+            phone,
+            mail,
+            image_url
+          }
+        }
+      });
     } catch (err) {
       console.error("Insert error:", err.message);
-      return res.status(500).json(createResponse("500", "Insert failed"));
+      return res.status(500).json(createResponse("500", "Database insertion failed"));
     }
   } catch (error) {
     console.error("Internal server error:", error);
@@ -30,6 +56,28 @@ const newUser = async (req, res) => {
   }
 };
 
+const createZikrGoal = async (req, res) => {
+  const { zikrId, groupId, goal } = req.body;
+  const connection = await getConnection();
+
+  if (!zikrId || !groupId || !goal) {
+      return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+      const insertSql = "INSERT INTO zikr_goal (zikrId, groupId, goal) VALUES (?, ?, ?)";
+      const [result] = await connection.execute(insertSql, [zikrId, groupId, goal]);
+
+      if (result.insertId) {
+          return res.status(201).json({ message: "Zikr goal created successfully", goalId: result.insertId });
+      } else {
+          return res.status(500).json({ error: "Failed to create Zikr goal" });
+      }
+  } catch (error) {
+      console.error("Error creating Zikr goal:", error);
+      return res.status(500).json({ error: "Internal server error" });
+  }
+};
 
 const newZikr = async (req, res) => {
   try {
@@ -53,131 +101,162 @@ const newZikr = async (req, res) => {
     }
   } catch (error) {
     console.error("Error occurred:", error); // For debugging
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error" }); 
   }
 };
 
 
-const fetchGroupsByOwnerId = async (req, res) => {
+const fetchGroups = async (req, res) => {
+  const { ownerId, groupType } = req.query;
+  const connection = await getConnection();
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "Owner ID is required" });
+  }
+
   try {
-    const ownerId = req.query.ownerId;
-    const connection = await getConnection();
+    const selectSql = `
+      SELECT * FROM \`Group\`
+      WHERE adminId = ? AND groupType = ?
+    `;
+    const [groups] = await connection.execute(selectSql, [ownerId, groupType]);
 
-    if (!ownerId) {
-      return res
-        .status(422)
-        .json(createResponse("422", "Unprocessable content"));
-    }
-
-    const selectSql = "SELECT * FROM `ZikrGroup` WHERE ownerId = ?";
-
-    // Fetch groups by ownerId
-    const [results] = await connection.query(selectSql, [ownerId]);
-
-    if (results.length > 0) {
-      const listGroups = results.map((row) => ({
-        groupId: row.groupId,
-        name: row.name,
-        followers: row.followers,
-        purpose: row.purpose,
-        total_count: row.total_count,
-        image_url: row.image_url,
-        isPublic: row.isPublic,
-        created_time: row.created_time,
-      }));
-
-      return res.status(200).json(createResponse("200", "ok", listGroups));
+    if (groups.length > 0) {
+      return res.status(200).json({ message: "Groups fetched successfully", groups });
     } else {
-      return res.status(404).json(createResponse("404", "No groups found"));
+      return res.status(404).json({ error: "No groups found" });
     }
   } catch (error) {
-    console.error("Error occurred:", error); // For debugging
+    console.error("Fetch groups error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 
 const insertNewGroup = async (req, res) => {
-  try {
-    const { ownerId, name, purpose, comment, image_url, isPublic } = req.body;
-    const connection = await getConnection();
-    
-    if (!ownerId || !isPublic || !purpose) {
-      return res
-        .status(422)
-        .json(createResponse("422", "Unprocessable content"));
-    }
+  const { ownerId, name, groupType, isPublic, image_url, hatmSoni } = req.body;
+  const connection = await getConnection();
 
-    const insertSql =
-      "INSERT INTO `ZikrGroup` (ownerId, name, followers, purpose, total_count, isPublic, image_url) VALUES (?, ?, ?, ?, 0, ?, ?)";
-
-    // Insert new group
-    const [result] = await connection.query(insertSql, [
-      ownerId,
-      name,
-      "[]", // Assuming this is a JSON string to represent an empty array
-      purpose,
-      isPublic,
-      image_url,
-    ]);
-
-    const groupId = result.insertId;
-
-    // Fetch the newly created group
-    const fetchSql = "SELECT * FROM `ZikrGroup` WHERE groupId = ?";
-    const [rows] = await connection.query(fetchSql, [groupId]);
-
-    if (rows.length > 0) {
-      return res.status(200).json(createResponse("200", "ok", rows[0]));
-    } else {
-      return res.status(404).json(createResponse("404", "Group not found"));
-    }
-  } catch (error) {
-    console.error("Error occurred:", error); // For debugging
-    return res.status(500).json(createResponse("500", "Server error"));
+  if (!ownerId || !name || !groupType) {
+    return res.status(400).json({ error: "Missing required fields" });
   }
-};
 
-
-const updateGroupTotalCount = async (req, res) => {
   try {
-    const connection = await getConnection();
-    const { userId, groupId, count } = req.body;
+    const insertSql = `
+      INSERT INTO \`Group\` (name, adminId, groupType, isPublic, guruhImg, hatmSoni)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const [result] = await connection.execute(insertSql, [name, ownerId, groupType, isPublic, image_url, hatmSoni]);
 
-    if (!userId || !groupId || !count) {
-      return res
-        .status(422)
-        .json(createResponse("422", "Unprocessable content"));
-    }
-
-    const updateSql =
-      "UPDATE `ZikrGroup` SET total_count = total_count + ? WHERE groupId = ?";
-
-    // Update the total_count in the ZikrGroup table
-    const [result] = await connection.query(updateSql, [count, groupId]);
-
-    if (result.affectedRows > 0) {
-      const fetchSql = "SELECT total_count FROM `ZikrGroup` WHERE groupId = ?";
-      const [rows] = await connection.query(fetchSql, [groupId]);
-
-      if (rows.length > 0) {
-        return res.status(200).json(createResponse("200", "ok", rows[0]));
-      } else {
-        return res
-          .status(404)
-          .json(createResponse("404", "Group not found"));
-      }
+    if (result.insertId) {
+      return res.status(201).json({ message: "Group created successfully", groupId: result.insertId });
     } else {
-      return res.status(404).json(createResponse("404", "Group not found"));
+      return res.status(500).json({ error: "Failed to create group" });
     }
   } catch (error) {
-    console.error("Error occurred:", error); // For debugging
+    console.error("Error inserting new group:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
 
+const addZikrCountForPrivate = async (req, res) => {
+  const { zikr_goal_id, userId, count } = req.body;
+  const sessionDate = new Date();
+  const connection = await getConnection();
 
-module.exports = { newUser, newZikr, fetchGroupsByOwnerId, insertNewGroup,updateGroupTotalCount };
+  try {
+      const insertSql = "INSERT INTO ZikrCounts (zikr_goal_id, userId, count, sessionDate) VALUES (?, ?, ?, ?)";
+      const [result] = await connection.execute(insertSql, [zikr_goal_id, userId, count, sessionDate]);
+
+      if (result.insertId) {
+          return res.status(201).json({ message: "Zikr count added successfully", countId: result.insertId });
+      } else {
+          return res.status(500).json({ error: "Failed to add Zikr count" });
+      }
+  } catch (error) {
+      console.error("Error adding Zikr count:", error);
+      return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+const addZikrCountForGroup = async (req, res) => {
+  const { groupId, zikrId, count } = req.body;
+  const userId = req.user.id; // User ID from authenticated session
+  console.log(userId);
+  
+
+  if (!groupId || !zikrId || !count) {
+    return res.status(400).json({ message: "Missing required parameters" });
+  }
+  try {
+    const connection = await getConnection();
+
+    // Retrieve the current goal for the zikr in the group
+    const [zikrGoal] = await connection.query(
+      "SELECT goal FROM zikr_goal WHERE groupId = ? AND zikrId = ?",
+      [groupId, zikrId]
+    );
+
+    if (zikrGoal.length === 0) {
+      return res.status(404).json({ message: "No goal found for this Zikr in the specified group" });
+    }
+
+    const goal = zikrGoal[0].goal;
+
+    // Update the zikr count for the group
+    const query = `
+      INSERT INTO group_zikr_activities (group_id, zikr_id, zikr_count)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE zikr_count = zikr_count + VALUES(zikr_count);
+    `; // Assumes 'group_id' and 'zikr_id' as a composite primary key
+
+    const [result] = await connection.query(query, [groupId, zikrId, count]);
+
+    if (result.affectedRows > 0) {
+      // Check the new total count
+      const [updatedCountResult] = await connection.query(
+        "SELECT zikr_count FROM group_zikr_activities WHERE group_id = ? AND zikr_id = ?",
+        [groupId, zikrId]
+      );
+
+      const totalCount = updatedCountResult[0].zikr_count;
+
+      // If total count has reached or exceeded the goal, notify or perform an action
+      if (totalCount >= goal) {
+        // Action when the goal is met (e.g., send notification, update goal status, etc.)
+        return res.status(200).json({
+          message: "Zikr count updated and goal reached!",
+          totalCount,
+          goalReached: true,
+        });
+      }
+
+      // Otherwise, return the updated count without goal reached status
+      return res.status(200).json({
+        message: "Zikr count updated successfully",
+        totalCount,
+        goalReached: false,
+      });
+    } else {
+      return res.status(500).json({ message: "Failed to update zikr count" });
+    }
+  } catch (error) {
+    console.error("Database error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
+
+module.exports = { 
+  newUser,
+  createZikrGoal,
+  newZikr,
+  fetchGroups,
+  insertNewGroup,
+  addZikrCountForGroup };
 
 function createResponse(status, message, data = null) {
   return {

@@ -5,40 +5,88 @@ const { jwtTokens } = require("../utils/jwt-helper");
 
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { mail, phone, password } = req.query;
+
+    // Check if at least mail or phone is provided
+    if (!mail && !phone) {
+      return res.status(400).json({ error: "Email or phone number is required" });
+    }
+
     const connection = await getConnection();
-    await connection.connect();
-    const query = 'SELECT * FROM "Users" WHERE email = $1';
-    const user = await connection.query(query, [email]);
-    if (user.rows.length === 0)
-      return res.status(401).json({ error: "Incorrect email" });
-    // pass check
-    const validPass = await bcrypt.compare(password, user.rows[0].password);
-    console.log(validPass);
-    if (!validPass)
+    let query, user;
+
+    // Fetch user based on mail or phone
+    if (mail) {
+      query = 'SELECT * FROM user WHERE mail = ?';
+      [user] = await connection.query(query, [mail]);
+    } else if (phone) {
+      query = 'SELECT * FROM user WHERE phone = ?';
+      [user] = await connection.query(query, [phone]);
+    }
+
+    // Check if user exists
+    if (user.length === 0) {
+      return res.status(401).json({ error: "Incorrect email or phone number" });
+    }
+
+    // Check if the provided password is correct
+    const validPass = await bcrypt.compare(password, user[0].password);
+    if (!validPass) {
       return res.status(401).json({ error: "Incorrect password" });
-    // jwt
-    let tokens = jwtTokens(user.rows[0]);
-    res.json(tokens);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
-const signup = async (req, res) => {
-  try {
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const connection = await getConnection();
-    await connection.connect();
-    const newUser = await connection.query(
-      'INSERT INTO "Users" ("fullName","email","password") VALUES ($1,$2,$3) RETURNING *',
-      [req.body.name, req.body.email, hashedPassword]
+    }
+
+    // Generate JWT token after successful login
+    const token = jwt.sign(
+      { userId: user[0].userId, mail: user[0].mail, phone: user[0].phone }, // Payload
+      process.env.JWT_SECRET, // Secret key from environment variable
     );
-    res.json({ users: newUser.rows[0] });
+    console.log(user[0].userId);
+    
+
+    // Send token and user data in response
+    return res.status(200).json({
+      message: "User logged in successfully",
+      token,
+      user: {
+        id: user[0].userId,
+        name: user[0].name,
+        surname: user[0].surname,
+        mail: user[0].mail,
+        phone: user[0].phone,
+        image_url: user[0].image_url
+      }
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
 
-module.exports = { login , signup};
+
+
+const signup = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const connection = await getConnection();
+
+    // Check if the email already exists
+    const checkUserQuery = 'SELECT * FROM `Users` WHERE email = ?';
+    const [existingUser] = await connection.query(checkUserQuery, [email]);
+
+    if (existingUser.length > 0) {
+      return res.status(409).json({ error: "Email already registered" });
+    }
+
+    // Insert new user
+    const insertUserQuery = 'INSERT INTO `Users` (`fullName`, `email`, `password`) VALUES (?, ?, ?)';
+    const [newUser] = await connection.query(insertUserQuery, [name, email, hashedPassword]);
+
+    res.status(201).json({ user: { id: newUser.insertId, name, email } });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+module.exports = { login, signup };
