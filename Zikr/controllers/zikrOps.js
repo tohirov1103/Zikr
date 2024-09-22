@@ -184,6 +184,8 @@ const addZikrCountForGroup = async (req, res) => {
   const { groupId, zikrId, count } = req.body;
   const userId = req.user.id; // User ID from authenticated session
   console.log(userId);
+  console.log(groupId);
+  console.log(count);
   
 
   if (!groupId || !zikrId || !count) {
