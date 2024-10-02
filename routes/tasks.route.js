@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const authenticate = require('../middleware/authorization.middleware');
 const {
   chooseJuz,
   createGroup,
@@ -15,6 +16,7 @@ const {
   showGroupDetails,
   leaveGroup,
 } = require("../controllers/operations");
+
 /**
  * @swagger
  * /userId/{userId}/poraId/{poraId}:
@@ -52,7 +54,7 @@ const {
  *       404:
  *         description: User or Juz not found
  */
-router.post("/userId/:userId/poraId/:poraId", chooseJuz);
+router.post("/userId/:userId/poraId/:poraId",authenticate, chooseJuz);
 
 /**
  * @swagger
@@ -97,28 +99,41 @@ router.post("/userId/:userId/poraId/:poraId", chooseJuz);
  *       401:
  *         description: Unauthorized
  */
-router.post("/hatm/group/:adminId", createGroup);
+router.post("/hatm/group/:adminId",authenticate, createGroup);
 
 /**
  * @swagger
  * /getAll:
  *   get:
- *     summary: Get all groups
+ *     summary: Retrieve all groups associated with a user
  *     tags: [Group Operations]
  *     parameters:
  *       - in: query
  *         name: userId
+ *         required: true
  *         schema:
  *           type: integer
+ *         description: The user ID to retrieve groups for
+ *       - in: query
+ *         name: groupType
  *         required: false
- *         description: The ID of the user to filter groups
+ *         schema:
+ *           type: string
+ *           enum: [quran, zikr]
+ *         description: Optional filter to only return groups of a specific type (quran or zikr)
  *     responses:
  *       200:
- *         description: List of all groups
+ *         description: A list of groups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
  *       404:
  *         description: No groups found
+ *       500:
+ *         description: Internal server error
  */
-router.get("/getAll", getAllGroups);
+router.get("/getAll",authenticate, getAllGroups);
 
 /**
  * @swagger
@@ -132,7 +147,7 @@ router.get("/getAll", getAllGroups);
  *       404:
  *         description: No public groups found
  */
-router.get('/groups/public', getPublicGroups);
+router.get('/groups/public',authenticate, getPublicGroups);
 
 /**
  * @swagger
@@ -146,7 +161,7 @@ router.get('/groups/public', getPublicGroups);
  *       404:
  *         description: No private groups found
  */
-router.get('/groups/private', getPrivateGroups);
+router.get('/groups/private',authenticate, getPrivateGroups);
 
 /**
  * @swagger
@@ -167,7 +182,7 @@ router.get('/groups/private', getPrivateGroups);
  *       404:
  *         description: User not found
  */
-router.get("/findUser", findUser);
+router.get("/findUser",authenticate, findUser);
 
 /**
  * @swagger
@@ -189,9 +204,6 @@ router.get("/findUser", findUser);
  *           schema:
  *             type: object
  *             properties:
- *               senderId:
- *                 type: integer
- *                 description: The ID of the user sending the invite
  *               groupId:
  *                 type: integer
  *                 description: The group ID to invite the user to
@@ -204,7 +216,7 @@ router.get("/findUser", findUser);
  *       400:
  *         description: Bad request
  */
-router.post("/groups/invite/:id", inviteUser);
+router.post("/groups/invite/:id", authenticate,inviteUser);
 
 /**
  * @swagger
@@ -225,7 +237,7 @@ router.post("/groups/invite/:id", inviteUser);
  *       404:
  *         description: No invites found for the user
  */
-router.get("/groups/getInvites/:id", getInvites);
+router.get("/groups/getInvites/:id",authenticate, getInvites);
 
 /**
  * @swagger
@@ -252,7 +264,7 @@ router.get("/groups/getInvites/:id", getInvites);
  *       400:
  *         description: Bad request
  */
-router.post("/groups/subscribe", subscribeUser);
+router.post("/groups/subscribe",authenticate, subscribeUser);
 
 /**
  * @swagger
@@ -289,7 +301,7 @@ router.post("/groups/subscribe", subscribeUser);
  *       404:
  *         description: Juz or user not found
  */
-router.delete('/cancelJuz/user/:userId/pora/:poraId', cancelJuz);
+router.delete('/cancelJuz/user/:userId/pora/:poraId',authenticate, cancelJuz);
 
 /**
  * @swagger
@@ -326,7 +338,8 @@ router.delete('/cancelJuz/user/:userId/pora/:poraId', cancelJuz);
  *       404:
  *         description: Juz or user not found
  */
-router.put('/finishedJuz/user/:userId/pora/:pora',finishedJuz);
+router.put('/finishedJuz/user/:userId/pora/:poraId',authenticate,finishedJuz);
+
 /**
  * @swagger
  * /groups/{id}/details:
@@ -360,7 +373,7 @@ router.put('/finishedJuz/user/:userId/pora/:pora',finishedJuz);
  *       404:
  *         description: Group not found
  */
-router.get("/groups/:id/details", showGroupDetails);
+router.get("/groups/:id/details",authenticate, showGroupDetails);
 
 /**
  * @swagger
@@ -387,7 +400,10 @@ router.get("/groups/:id/details", showGroupDetails);
  *       404:
  *         description: Group or user not found
  */
-router.post('/leave-group', leaveGroup);
+router.post('/leave-group',authenticate, leaveGroup);
 
 
 module.exports = router;
+
+
+

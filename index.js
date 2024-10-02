@@ -7,15 +7,17 @@ const http = require('http');
 const socketio = require('socket.io');
 const path = require('path');
 require('dotenv').config();
-const task = require('./routes/admin.route');
+const task = require('./routes/tasks.route');
 const zikrTasks = require('./routes/zikrRoutes');
 const adminTasks = require('./routes/admin.route');
 const messageTasks = require('./routes/messages.route');
 const userRegLog = require('./routes/userRegLog.route');
 const setupSwagger = require('./utils/swaggerSetup');
+const authenticate = require('./middleware/authorization.middleware');
 
 const app = express();
 setupSwagger(app);
+
 const server = http.createServer(app);
 const io = socketio(server, {
   cors: {
@@ -27,10 +29,10 @@ const io = socketio(server, {
 app.use(cors());
 app.use(express.json());
 
-app.use('/tasks', task);
+app.use('/', task);
 app.use('/', zikrTasks);
-app.use('/admin', adminTasks);
-app.use('/messages', messageTasks);
+app.use('/', adminTasks);
+app.use('/', messageTasks);
 app.use('/', userRegLog);
 
 // Image Storage Engine
@@ -77,6 +79,7 @@ const start = async () => {
         console.log("Connected successfully");
         server.listen(port, () => {
             console.log(`Server running on port ${port}`);
+            
         });
     } catch (error) {
         console.error(error);

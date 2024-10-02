@@ -48,10 +48,10 @@ router.post('/zikr-goal', authenticate, createZikrGoal);
  * @swagger
  * /zikr:
  *   post:
- *     summary: Add a new Zikr
- *     tags: [Zikr]
- *     security:
- *       - bearerAuth: []
+ *     tags:
+ *       - Zikr
+ *     summary: Create a new Zikr
+ *     description: This route allows the user to create a new Zikr for a group with a specific goal.
  *     requestBody:
  *       required: true
  *       content:
@@ -61,23 +61,37 @@ router.post('/zikr-goal', authenticate, createZikrGoal);
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Name of the Zikr
+ *                 example: Morning Prayer
  *               desc:
  *                 type: string
+ *                 description: Description of the Zikr
+ *                 example: A zikr for early morning blessings
  *               body:
  *                 type: string
+ *                 description: The phrases for the Zikr
+ *                 example: Subhanallah, Alhamdulillah, Allahu Akbar
  *               sound_url:
  *                 type: string
- *             required:
- *               - name
+ *                 description: URL of the sound associated with the Zikr
+ *                 example: http://example.com/sounds/morningprayer.mp3
+ *               goal:
+ *                 type: integer
+ *                 description: The goal for how many times the zikr should be repeated
+ *                 example: 1000
+ *               groupId:
+ *                 type: integer
+ *                 description: The ID of the group associated with this Zikr
+ *                 example: 123
  *     responses:
- *       200:
+ *       201:
  *         description: Zikr created successfully
  *       400:
- *         description: Missing required parameters
+ *         description: Missing required fields
  *       500:
  *         description: Internal server error
  */
-router.post('/zikr', authenticate, newZikr);
+router.post('/zikr', authenticate,newZikr);  // Route for creating a new zikr
 
 /**
  * @swagger

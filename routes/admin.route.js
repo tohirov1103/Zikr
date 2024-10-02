@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { changeNameOfGroup, deleteUser } = require('../controllers/adminOperations');
 const isAdminOfThatGroup = require('../middleware/isAdmin');
+const authenticate = require('../middleware/authorization.middleware');
 
 /**
  * @swagger
@@ -38,7 +39,7 @@ const isAdminOfThatGroup = require('../middleware/isAdmin');
  *     security:
  *       - bearerAuth: []
  */
-router.put("/groups/:id/change-name", isAdminOfThatGroup, changeNameOfGroup);
+router.put("/groups/:id/change-name", authenticate,isAdminOfThatGroup, changeNameOfGroup);
 
 /**
  * @swagger
@@ -71,6 +72,6 @@ router.put("/groups/:id/change-name", isAdminOfThatGroup, changeNameOfGroup);
  *     security:
  *       - bearerAuth: []
  */
-router.delete("/groups/:id/remove-user", isAdminOfThatGroup, deleteUser);
+router.delete("/groups/:id/remove-user", authenticate,isAdminOfThatGroup, deleteUser);
 
 module.exports = router;

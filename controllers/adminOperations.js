@@ -1,11 +1,14 @@
 const { getConnection } = require('../db/connectDb');
 
 // Change the name of a group
-// Change the name of a group
 const changeNameOfGroup = async (req, res) => {
   try {
     const idGroup = req.params.id;
-    const newName = req.body.name;
+    const newName = req.body.newName;
+
+    console.log(newName);
+    
+
     const connection = await getConnection();
 
     const query = 'UPDATE `Group` SET name = ? WHERE idGroup = ?';
@@ -27,7 +30,7 @@ const changeNameOfGroup = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const idGroup = req.params.id;  // The ID of the group
-    const userId = req.body.userId;  // The ID of the user to be removed
+    const userId = req.query.userId;  // The ID of the user to be removed
     const connection = await getConnection();
 
     // Remove the user from the group_members table where group_id and user_id match

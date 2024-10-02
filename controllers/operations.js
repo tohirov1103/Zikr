@@ -6,8 +6,8 @@ function createResponse(status, message, data = null) {
 }
 
 // Example validation (can be expanded for all functions)
-const validateCreateGroup = ({ name, isPublic, kimga, guruhImg, hatmSoni }) => {
-  return name && isPublic !== undefined && kimga && guruhImg && hatmSoni;
+const validateCreateGroup = ({ name, isPublic, kimga, guruhImg }) => {
+  return name && isPublic !== undefined && kimga && guruhImg;
 };
 
 const createGroup = async (req, res) => {
@@ -95,7 +95,7 @@ const updateGroup = async (req, res) => {
 const getGroups = async (req, res, isPublic) => {
   try {
     const connection = await getConnection();
-    const {userId} = req.query;
+    const userId = req.user.id;
 
     console.log('User ID:', userId);
     console.log('Is Public:', isPublic);
@@ -129,23 +129,42 @@ const getGroups = async (req, res, isPublic) => {
 const getAllGroups = async (req, res) => {
   try {
     const connection = await getConnection();
-    const {userId} = req.query; // User ID passed as a parameter to filter groups
+    const { userId } = req.query; // User ID passed as a parameter to filter groups
 
-    const query = `
+    // Optional: Get groupType from query to filter specific types
+    const groupType = req.query.groupType; // 'quran' or 'zikr'
+
+    let query = `
       SELECT g.*
       FROM \`Group\` g
       INNER JOIN group_members gm ON g.idGroup = gm.group_id
       WHERE gm.user_id = ?
     `;
 
-    const [groups] = await connection.query(query, [userId]);
+    const queryParams = [userId];
+
+    // Filter by groupType if provided
+    if (groupType) {
+      query += ` AND g.groupType = ?`;
+      queryParams.push(groupType);
+    }
+
+    // Sort by groupType enum
+    query += ` ORDER BY FIELD(g.groupType, 'quran', 'zikr')`;
+
+    const [groups] = await connection.query(query, queryParams);
+
+    if (groups.length === 0) {
+      return res.status(404).json(createResponse("404", "No groups found"));
+    }
 
     return res.json(createResponse("200", "Success", groups));
   } catch (err) {
-    console.error(err);
+    console.error("Error retrieving groups:", err);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 
 const getPublicGroups = (req, res) => {
@@ -236,26 +255,37 @@ const findUser = async (req, res) => {
 const inviteUser = async (req, res) => {
   try {
     const connection = await getConnection();
-    const receiverId = req.params.id;
-    const { senderId, groupId, isInvite } = req.body;
+    const receiverId = req.params.id;  // The user to be invited
+    const senderId = req.user.id;  // The admin or sender of the invite
+    const { groupId, isInvite } = req.body;
 
-    // Check if the user is already in the group
-    const checkQuery = "SELECT JSON_CONTAINS(usersId, ?, '$') AS isInGroup FROM `Group` WHERE idGroup = ?";
+    // Step 1: Check if the user is already in the group
+    const checkQuery = "SELECT * FROM group_members WHERE user_id = ? AND group_id = ?";
     const [checkResult] = await connection.query(checkQuery, [receiverId, groupId]);
 
-    if (checkResult[0].isInGroup) {
+    if (checkResult.length > 0) {
+      // If the user is already in the group
       return res.status(400).json(createResponse("400", "User is already in the group"));
     }
 
+    // Step 2: Insert an invitation into the notifications table
     const insertQuery = "INSERT INTO notifications (senderId, receiverId, groupId, isInvite) VALUES (?, ?, ?, ?)";
     await connection.query(insertQuery, [senderId, receiverId, groupId, isInvite]);
 
-    return res.json(createResponse("200", "Invitation sent", { groupId, receiverId }));
+    // Step 3: Optionally, if `isInvite` is true, add the user directly to the group_members table
+    if (isInvite) {
+      const addMemberQuery = "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 'member')";
+      await connection.query(addMemberQuery, [groupId, receiverId]);
+    }
+
+    // Step 4: Return success response
+    return res.status(200).json(createResponse("200", "Invitation sent successfully", { groupId, receiverId }));
   } catch (error) {
-    console.error(error);
+    console.error("Error inviting user:", error);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const subscribeUser = async (req, res) => {
   try {
@@ -284,16 +314,27 @@ const subscribeUser = async (req, res) => {
 const getInvites = async (req, res) => {
   try {
     const connection = await getConnection();
-    const userId = req.params.id;
-    const query = "SELECT * FROM notifications WHERE isInvite = true AND receiverId = ?";
+    const userId = req.user.id; // The user who receives invites
+
+    // Fetch all invites where the user is the receiver
+    const query = `
+      SELECT n.*, g.name as groupName, u.name as senderName
+      FROM notifications n
+      JOIN \`Group\` g ON n.groupId = g.idGroup
+      JOIN user u ON n.senderId = u.userId
+      WHERE n.isInvite = true AND n.receiverId = ?;
+    `;
+
     const [invites] = await connection.query(query, [userId]);
 
-    return res.json(createResponse("200", "Success", invites));
+    // If invites are found, return them
+    return res.status(200).json(createResponse("200", "Success", invites));
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching invites:", error);
     return res.status(500).json(createResponse("500", "Internal server error"));
   }
 };
+
 
 const chooseJuz = async (req, res) => {
   try {
@@ -350,13 +391,14 @@ const chooseJuz = async (req, res) => {
 const finishedJuz = async (req, res) => {
   try {
     const connection = await getConnection();
-    const { poraId, userId } = req.params;  // Ensure these are correctly provided in the URL
-    const idGroup = req.body.idGroup;  // Ensure idGroup is passed in the request body
+    const poraId = req.params.poraId;  
+    const userId = req.params.userId;
+    const idGroup = req.body.idGroup;
 
     // Start a transaction to ensure both operations either complete successfully or rollback
     await connection.beginTransaction();
 
-    // Update the booking to mark as done
+    // Update the booking to mark it as done
     const updateBookedPoralarQuery = `
       UPDATE bookedPoralar
       SET isDone = 1
@@ -378,10 +420,65 @@ const finishedJuz = async (req, res) => {
     `;
     await connection.query(updateFinishedPoralarCountQuery, [idGroup]);
 
+    // Fetch the goal from the zikr_goal table (where zikr_id is NULL for Quran)
+    const getGoalQuery = `
+      SELECT goal 
+      FROM zikr_goal
+      WHERE group_id = ? AND zikr_id IS NULL
+    `;
+    const [goalResult] = await connection.query(getGoalQuery, [idGroup]);
+
+    if (goalResult.length === 0) {
+      await connection.rollback();
+      return res.status(404).json(createResponse("404", "No Quran goal found for this group"));
+    }
+
+    const quranGoal = goalResult[0].goal;
+
+    // Check the current `juzCount`
+    const checkFinishedQuery = `
+      SELECT f.juzCount
+      FROM finishedPoralarCount f
+      WHERE f.idGroup = ?
+    `;
+    const [countResult] = await connection.query(checkFinishedQuery, [idGroup]);
+
+    if (countResult.length === 0) {
+      await connection.rollback();
+      return res.status(404).json(createResponse("404", "Finished count not found"));
+    }
+
+    const { juzCount } = countResult[0];
+
+    // If the current count reaches the goal (e.g., 30 Juz for Quran), mark the goal as reached
+    if (juzCount >= quranGoal) {
+      // Reset the count and update the hatm completion
+      const resetFinishedPoralarCountQuery = `
+        UPDATE finishedPoralarCount
+        SET juzCount = 0
+        WHERE idGroup = ?
+      `;
+      await connection.query(resetFinishedPoralarCountQuery, [idGroup]);
+
+      // Increment hatmSoni in the group table (representing completed hatms)
+      const incrementHatmQuery = `
+        UPDATE \`Group\`
+        SET hatmSoni = hatmSoni + 1
+        WHERE idGroup = ?
+      `;
+      await connection.query(incrementHatmQuery, [idGroup]);
+
+      // Commit the transaction
+      await connection.commit();
+
+      return res.json(createResponse("200", `${poraId}-juz has been finished. Full hatm completed!`, { poraId, userId, hatmCompleted: true }));
+    }
+
     // Commit the transaction if all is well
     await connection.commit();
 
-    return res.json(createResponse("200", `${poraId}-juz has been finished`, { poraId, userId }));
+    // If the full hatm is not completed, return normal response
+    return res.json(createResponse("200", `${poraId}-juz has been finished`, { poraId, userId, hatmCompleted: false }));
   } catch (error) {
     let connection = await getConnection();
     // If any error occurs, rollback the transaction

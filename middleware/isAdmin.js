@@ -3,8 +3,10 @@ const {getConnection} = require('../db/connectDb'); // Make sure to import your 
 // Middleware to check if the user is the admin of the group
 const isAdminOfThatGroup = async (req, res, next) => {
   try {
-    const userId = req.user.userId; 
+    const userId = req.user.id; 
     const groupId = req.params.id; 
+
+    console.log(userId);
 
     if (!userId || !groupId) {
       return res.status(400).json({ message: "User ID and Group ID are required" });
